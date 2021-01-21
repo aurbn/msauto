@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="fc577eb0-95f2-4f88-a6df-8dc1188fc2d5" name="warp">
+        <fileTransfer rootFolder="/home/urban/msauto" accessType="SFTP" host="pcs" port="3333" sshConfigId="b2e0e426-3a96-40e7-bf2b-a780dbe8d46d" sshConfig="urban@pcs:3333 key" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
