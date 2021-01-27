@@ -16,6 +16,7 @@ import threading
 from tempfile import NamedTemporaryFile
 from shutil import move
 import contextlib
+import functools
 
 PROJECT_HEADER = 'Project_title'
 SAMPLE_HEADER = 'Sample_ID'
@@ -59,6 +60,17 @@ tandem_stub='''<?xml version="1.0"?>
 	<note type="input" label="output, path">{output_path}</note>
 </bioml>
 '''
+
+def locked(lockname):
+    '''Run function locked system-wide'''
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            with ILock(lockname):
+                return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
 
 def get_g_service():
     global g_service
@@ -188,13 +200,8 @@ def remove_first_line(file_path):
     move(temp_path, file_path)
 
 
+@locked(LOCK_IMPORT)
 def run_gimport(args):
-    if not os.path.exists(LOCK_IMPORT):
-        with open(LOCK_IMPORT, "w") as lf:
-            lf.writelines(f'{os.getpid()}')
-    else:
-        return
-
     gdata = get_current_table()
 
     old_samples = read_list(DB_IMPORTED_FILE, DB_IMPORTED_LOCK)
@@ -228,15 +235,11 @@ def run_gimport(args):
             for project, sample in conv_queue:
                 f.writelines(f"{project}\t{sample}\n")
 
-    os.remove(LOCK_IMPORT)
+    # os.remove(LOCK_IMPORT)
 
 
+@locked(LOCK_CONVERT)
 def run_conversions(args):
-    if not os.path.exists(LOCK_CONVERT):
-        with open(LOCK_CONVERT, "w") as lf:
-            lf.writelines(f'{os.getpid()}')
-    else:
-        return
     l = None
     with ILock(DB_CONV_LOCK):
         if os.path.exists(DB_CONV_FILE):
@@ -258,15 +261,9 @@ def run_conversions(args):
         append_list(DB_TANDEM_FILE, [(project, sample)], DB_TANDEM_LOCK)
         append_list(DB_MASCOT_FILE, [(project, sample)], DB_MASCOT_LOCK)
 
-    os.remove(LOCK_CONVERT)
 
-
+@locked(LOCK_TANDEM)
 def run_tandem(args):
-    if not os.path.exists(LOCK_TANDEM):
-        with open(LOCK_TANDEM, "w") as lf:
-            lf.writelines(f'{os.getpid()}')
-    else:
-        return
     l = None
     with ILock(DB_TANDEM_LOCK):
         if os.path.exists(DB_TANDEM_FILE):
@@ -293,7 +290,6 @@ def run_tandem(args):
         process.wait()
         log(project, f"X!Tandem finished with {process.returncode}, {process.stdout}")
         set_status(psample, "Identification finished")
-    os.remove(LOCK_TANDEM)
 
 
 if __name__ == '__main__':
