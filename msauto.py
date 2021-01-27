@@ -220,6 +220,7 @@ def run_gimport(args):
             log(project, f"Created root for project {project}")
         if (project, sample) not in conv_old:
             conv_queue.append((project, sample))
+            set_status((project, sample), "Waiting for the analysis")
             log(project, f"Sample ID {sample} is waiting for the analysis")
 
     with ILock(DB_CONV_LOCK):
