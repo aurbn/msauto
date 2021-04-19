@@ -1,5 +1,6 @@
 #!/usr/bin/env python3.6
 import argparse
+import re
 import subprocess
 from datetime import datetime
 import calendar
@@ -7,6 +8,7 @@ import locale
 from pprint import pprint
 import httplib2
 import apiclient
+import requests
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 from time import sleep
@@ -32,10 +34,10 @@ POOL_TIME = 1
 LETTERS='ABCDEFGHIJKLNMOPQRSTUVWXYZ'
 g_service = None
 
-LOCKPATH = DB_ROOT
-LOCK_IMPORT = os.path.join(LOCKPATH, 'LOCK_IMPORT')
-LOCK_CONVERT = os.path.join(LOCKPATH, 'LOCK_CONVERT')
-LOCK_TANDEM = os.path.join(LOCKPATH, 'LOCK_TANDEM')
+LOCK_IMPORT = 'LOCK_IMPORT'
+LOCK_CONVERT = 'LOCK_CONVERT'
+LOCK_TANDEM = 'LOCK_TANDEM'
+LOCK_MASCOT = 'LOCK_MASCOT'
 
 
 tandem_stub='''<?xml version="1.0"?>
@@ -156,11 +158,12 @@ def get_proj_raw_root(project):
 
 
 def log(project, str):
+    now = datetime.now().strftime("[%d/%m/%Y  %H:%M:%S]\t")
     root = get_proj_root(project)
     fname = os.path.join(root, LOGNAME)
     mode = "a" if os.path.exists(fname) else "w"
     with open(fname, mode) as f:
-        f.writelines(str)
+        f.writelines(now+str)
         f.writelines('\n')
 
 
@@ -174,6 +177,12 @@ def get_sample_mgf_path(psample):
 
 def get_sample_tandem_path(psample):
     return os.path.join(get_proj_root(psample[0]), psample[1]+".tandem.xml")
+
+
+def get_sample_mascot_path(psample):
+    return os.path.join(get_proj_root(psample[0]), psample[1]+".dat")
+
+
 
 
 def remove_first_line(file_path):
@@ -271,12 +280,94 @@ def run_tandem(args):
         with open(confpath, "w") as f:
             f.writelines(tandemconf)
         set_status(psample, "Identification running")
-        log(project, "Startting X!Tandem: "+TANDEM_CMD.format(infile=confpath))
+        log(project, "Starting X!Tandem: "+TANDEM_CMD.format(infile=confpath))
         process = subprocess.Popen(TANDEM_CMD.format(infile=confpath),
                                shell=True, stdout=subprocess.PIPE)
         process.wait()
         log(project, f"X!Tandem finished with {process.returncode}, {process.stdout}")
         set_status(psample, "Identification finished")
+
+
+def get_default_mascot_pars(args):
+    filename = MASCOT_DEFAULTS
+    pars = {}
+    with open(filename, "r") as f:
+        for l in f.readlines():
+            name, par = map(lambda x: x.strip(), l.split("="))
+            pars[name] = par
+    pars['FORMVER'] = '1.01'
+    return pars
+
+
+def mascot_login(mascot_cgi, user, password):
+    postdict={}
+    postdict['username'] = user
+    postdict['password'] = password
+    postdict['action'] = 'login'
+    postdict['savecookie'] = '1'
+
+    session = requests.Session()
+    response = session.post(MASCOT_CGI+'/login.pl', data=postdict)
+
+    return session
+
+
+@locked(LOCK_MASCOT)
+def run_mascot(args):
+    l = None
+    with ILock(DB_MASCOT_LOCK):
+        if os.path.exists(DB_MASCOT_FILE):
+            with open(DB_MASCOT_FILE, "r") as f:
+                l = f.readline()
+            if l:
+                remove_first_line(DB_MASCOT_FILE)
+    if not l:
+        return
+
+    project, sample = map(lambda x: x.strip(), l.split('\t'))
+    psample = (project, sample)
+    mgfpath = get_sample_mgf_path(psample)
+    datpath = get_sample_mascot_path(psample)
+    set_status(psample, "Identification running (m)")
+    pars = get_default_mascot_pars(psample)
+    pars['DB'] = 'UniProtKB-HS_TnD_17'
+    #pars['USERNAME'] = 'admin'
+    #pars['PASSWORD'] = 'Chieftec64'
+
+    session = mascot_login(MASCOT_CGI, 'admin', 'Chieftec64')
+    if session:
+        log(project, f"Logged in {MASCOT_CGI}")
+
+    pars1 = {}
+    # pars1['MASCOT_SESSION'] = cookies['MASCOT_SESSION']
+    # pars1['MASCOT_USERID'] = cookies['MASCOT_USERID']
+    # pars1['MASCOT_USERNAME'] = cookies['MASCOT_USERNAME']
+    sendurl = MASCOT_CGI + '/nph-mascot.exe?1'
+    with open(mgfpath, 'rb') as f:
+        response = session.post(sendurl, files={'FILE':f}, data=pars)
+    log(project, "Mascot response was: " + response.content.decode())
+    if response.ok:
+        error_result = re.match('Sorry, your search could not be performed', response.content.decode())
+        if error_result:
+            log('Search failed')
+        match = re.search(r'master_results\.pl\?file=.*data/(?P<date>\d+)/(?P<file>F\d+\.dat)',
+                          response.content.decode())
+        date, file = match.group('date'), match.group('file')
+
+        mascot_xcgi = MASCOT_CGI.replace('cgi', 'x-cgi')
+        get_url = mascot_xcgi + f'/ms-status.exe?Autorefresh=false&Show=RESULTFILE&DateDir={date}&ResJob={file}'
+        log(project, f'Downloading file {get_url}')
+
+        with session.get(get_url, stream=True) as r:
+            r.raise_for_status()
+            with open(datpath, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        log(project, 'Downloaded')
+        set_status(psample, 'Identification finished')
+
+    else:
+        log(project, "Bad response")
 
 
 if __name__ == '__main__':
@@ -291,6 +382,9 @@ if __name__ == '__main__':
 
     tandem_parser = subparsers.add_parser('tandem')
     tandem_parser.set_defaults(func=run_tandem)
+
+    tandem_parser = subparsers.add_parser('mascot')
+    tandem_parser.set_defaults(func=run_mascot)
 
 
     args = parser.parse_args()
