@@ -18,6 +18,9 @@ from shutil import move
 import contextlib
 import functools
 
+
+from config import *
+
 PROJECT_HEADER = 'Project_title'
 SAMPLE_HEADER = 'Sample_ID'
 TYPE_HEADER = 'Proteolysis_protocol'
@@ -25,23 +28,7 @@ STATUS_HEADER = 'Status'
 
 POOL_TIME = 1
 
-RAW_ROOT = '/home/urban/msauto_data/raws'
-DATA_ROOT = '/home/urban/msauto_data/proc'
-DB_ROOT = '/home/urban/msauto_data/db'
-LOGNAME = 'msauto.log'
-CONVERSION_CMD = '/home/urban/git/msauto/conv.sh {infile} {outdir}'
-TANDEM_TAXONOMY = '/home/urban/git/msauto/taxonomy.xml'
-TANDEM_DEFAULTS = '/home/urban/git/msauto/default_PROTEOME_MetOxilation_params.xml'
-TANDEM_CMD = '/home/urban/bin/tandem-linux-17-02-01-4/bin/static_link_ubuntu/tandem.exe {infile}'
-DB_CONV_FILE = os.path.join(DB_ROOT, "conversion.list")
-DB_CONV_LOCK = 'DB_CONV_LOCK'
-DB_IMPORTED_FILE = os.path.join(DB_ROOT, "imported.list")
-DB_IMPORTED_LOCK = 'DB_IMPORTED_LOCK'
-DB_TANDEM_FILE = os.path.join(DB_ROOT, "tandem.list")
-DB_TANDEM_LOCK = 'DB_TANDEM_LOCK'
-DB_MASCOT_FILE = os.path.join(DB_ROOT, "mascot.list")
-DB_MASCOT_LOCK = 'DB_MASCOT_LOCK'
-spreadsheetId = '1gayGq3w_eYMBCW6di5VX9FWVn7DBdJ8oafhm7QnvwK0'
+
 LETTERS='ABCDEFGHIJKLNMOPQRSTUVWXYZ'
 g_service = None
 
