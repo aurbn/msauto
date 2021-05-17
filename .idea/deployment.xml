@@ -1,18 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="urban@pcs:3333" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="msauto@prot1:22" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true">
     <serverData>
-      <paths name="urban@pcs:3333">
+      <paths name="msauto@prot1:22">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/urban/msauto" local="$PROJECT_DIR$" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="warp">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/home/msauto/msauto_venv/msauto" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

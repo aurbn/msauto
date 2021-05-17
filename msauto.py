@@ -25,8 +25,15 @@ from config import *
 
 PROJECT_HEADER = 'Project_title'
 SAMPLE_HEADER = 'Sample_ID'
-TYPE_HEADER = 'Proteolysis_protocol'
+PROTOCOL_HEADER = 'Proteolysis_protocol'
+ORGANISM_HEADER = 'Organism'
 STATUS_HEADER = 'Status'
+
+TANDEM_DB_HEADER = 'Tandem_db'
+MASCOT_DB_HEADER = 'Mascot_db'
+TANDEM_PREFS_HEADER = 'Tandem_prefs'
+MASCOT_PREFS_HEADER = 'Mascot_prefs'
+
 
 POOL_TIME = 1
 
@@ -34,6 +41,7 @@ POOL_TIME = 1
 LETTERS='ABCDEFGHIJKLNMOPQRSTUVWXYZ'
 g_service = None
 
+LOCK_PREFS = 'LOCK_PREFS'
 LOCK_IMPORT = 'LOCK_IMPORT'
 LOCK_CONVERT = 'LOCK_CONVERT'
 LOCK_TANDEM = 'LOCK_TANDEM'
@@ -68,7 +76,6 @@ def get_g_service():
         return g_service
 
     locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
-    CREDENTIALS_FILE = '/home/urban/git/msauto/key.json'
     credentials = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE,
                                                                    ['https://www.googleapis.com/auth/spreadsheets',
                                                                     'https://www.googleapis.com/auth/drive'])
@@ -89,6 +96,25 @@ def get_current_table(uploaded=True):
     if uploaded:
         d = d[d['Uploaded']=='TRUE']
     return d
+
+
+@locked(LOCK_PREFS)
+def get_current_prefs(args):
+    service = get_g_service()
+    range_name = 'Prefs!A:C'
+    table = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range=range_name).execute()
+    colnames = table['values'][0]
+    colnames = list(map(lambda s: s.replace(' ', '_'), colnames))
+    protocol = pd.DataFrame( table['values'][1:], columns=colnames)
+    protocol.to_csv(PROTOCOL_MAP, sep='\t', index=False)
+
+    range_name = 'Prefs!D:F'
+    table = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range=range_name).execute()
+    colnames = table['values'][0]
+    colnames = list(map(lambda s: s.replace(' ', '_'), colnames))
+    organism = pd.DataFrame(table['values'][1:], columns=colnames)
+    organism.to_csv(ORGANISM_MAP, sep='\t', index=False)
+    return protocol, organism
 
 
 def set_status(psample, status):
@@ -145,8 +171,8 @@ def append_list(filename, pslist, lockname=None):
     with mgr(lockname):
         mode = "a" if os.path.exists(filename) else "w"
         with open(filename, mode) as f:
-            for project, sample in pslist:
-                f.writelines(f"{project}\t{sample}\n")
+            for project, sample, protocol, organism in pslist:
+                f.writelines(f"{project}\t{sample}\t{protocol}\t{organism}\n")
 
 
 def get_proj_root(project):
@@ -156,6 +182,16 @@ def get_proj_root(project):
 def get_proj_raw_root(project):
     return os.path.join(RAW_ROOT, project)
 
+
+@locked(LOCK_PREFS)
+def get_db(organism, header):
+    return pd.read_csv(ORGANISM_MAP, sep='\t', index_col=0, header=0).to_dict('index')[organism][header]
+
+
+@locked(LOCK_PREFS)
+def get_prefs(protocol, header):
+    name = pd.read_csv(PROTOCOL_MAP, sep='\t', index_col=0, header=0).to_dict('index')[protocol][header]
+    return os.path.join(CONF_DIR, name)
 
 def log(project, str):
     now = datetime.now().strftime("[%d/%m/%Y  %H:%M:%S]\t")
@@ -183,8 +219,6 @@ def get_sample_mascot_path(psample):
     return os.path.join(get_proj_root(psample[0]), psample[1]+".dat")
 
 
-
-
 def remove_first_line(file_path):
     with open(file_path, 'r') as f_in:
         with NamedTemporaryFile(mode='w', delete=False) as f_out:
@@ -205,9 +239,15 @@ def run_gimport(args):
     for k, row in gdata.iterrows():
         project = row[PROJECT_HEADER]
         sample = row[SAMPLE_HEADER]
+        protocol = row[PROTOCOL_HEADER]
+        organism = row[ORGANISM_HEADER]
 
-        if os.path.exists(get_sample_raw_path((project, sample))):
-            samples.append((project, sample))
+        if os.path.exists(get_sample_raw_path((project, sample, protocol, organism))):
+            samples.append((project, sample, protocol, organism))
+        else:
+            set_status((project, sample, protocol, organism), "No file found: {}".format(
+                get_sample_raw_path((project, sample, protocol, organism))))
+
 
     # remove  already imported samples
     samples = list(filter(lambda x: x not in old_samples, samples))
@@ -216,20 +256,20 @@ def run_gimport(args):
     conv_queue = []
     conv_old = read_list(DB_CONV_FILE, DB_CONV_LOCK)
 
-    for project, sample in samples:
+    for project, sample, protocol, organism in samples:
         root = get_proj_root(project)
         if not os.path.exists(root):
             os.mkdir(root)
             log(project, f"Created root for project {project}")
-        if (project, sample) not in conv_old:
-            conv_queue.append((project, sample))
-            set_status((project, sample), "Waiting for the analysis")
+        if (project, sample, protocol, organism) not in conv_old:
+            conv_queue.append((project, sample, protocol, organism))
+            set_status((project, sample, protocol, organism), "Waiting for the analysis")
             log(project, f"Sample ID {sample} is waiting for the analysis")
 
     with ILock(DB_CONV_LOCK):
         with open(DB_CONV_FILE, "a") as f:
-            for project, sample in conv_queue:
-                f.writelines(f"{project}\t{sample}\n")
+            for project, sample, protocol, organism in conv_queue:
+                f.writelines(f"{project}\t{sample}\t{protocol}\t{organism}\n")
 
     # os.remove(LOCK_IMPORT)
 
@@ -244,8 +284,8 @@ def run_conversions(args):
             if l:
                 remove_first_line(DB_CONV_FILE)
     if l:
-        project, sample = map(lambda x: x.strip(), l.split('\t'))
-        ps = (project, sample)
+        project, sample, protocol, organism = map(lambda x: x.strip(), l.split('\t'))
+        ps = (project, sample, protocol, organism)
         rawfile = get_sample_raw_path(ps)
         log(project, f"Started converting {rawfile}")
         set_status(ps, 'Converting')
@@ -254,8 +294,8 @@ def run_conversions(args):
         process.wait()
         log(project, f'Converted {rawfile}')
         set_status(ps, 'Converted')
-        append_list(DB_TANDEM_FILE, [(project, sample)], DB_TANDEM_LOCK)
-        append_list(DB_MASCOT_FILE, [(project, sample)], DB_MASCOT_LOCK)
+        append_list(DB_TANDEM_FILE, [(project, sample, protocol, organism)], DB_TANDEM_LOCK)
+        append_list(DB_MASCOT_FILE, [(project, sample, protocol, organism)], DB_MASCOT_LOCK)
 
 
 @locked(LOCK_TANDEM)
@@ -268,28 +308,32 @@ def run_tandem(args):
             if l:
                 remove_first_line(DB_TANDEM_FILE)
     if l:
-        project, sample = map(lambda x: x.strip(), l.split('\t'))
-        psample = (project, sample)
+        project, sample, protocol, organism = map(lambda x: x.strip(), l.split('\t'))
+        psample = (project, sample, protocol, organism)
         confpath = os.path.join(get_proj_root(project), sample+".tconf.xml")
         mgfpath = get_sample_mgf_path(psample)
-        tandemconf = tandem_stub.format(defaults_path=TANDEM_DEFAULTS,
+
+        tandem_db = get_db(organism, TANDEM_DB_HEADER)
+        tandem_prefs = get_prefs(protocol, TANDEM_PREFS_HEADER)
+
+        tandemconf = tandem_stub.format(defaults_path=tandem_prefs,
                                         taxonomy_path=TANDEM_TAXONOMY,
                                         mgf_file=mgfpath,
                                         output_path=get_sample_tandem_path(psample),
-                                        taxon='human')
+                                        taxon=tandem_db)
         with open(confpath, "w") as f:
             f.writelines(tandemconf)
-        set_status(psample, "Identification running")
+        set_status(psample, "Identification (Tandem) running")
         log(project, "Starting X!Tandem: "+TANDEM_CMD.format(infile=confpath))
         process = subprocess.Popen(TANDEM_CMD.format(infile=confpath),
                                shell=True, stdout=subprocess.PIPE)
         process.wait()
         log(project, f"X!Tandem finished with {process.returncode}, {process.stdout}")
-        set_status(psample, "Identification finished")
+        set_status(psample, "Identification (Tandem) finished")
 
 
-def get_default_mascot_pars(args):
-    filename = MASCOT_DEFAULTS
+def get_default_mascot_pars(mascot_defaults):
+    filename = mascot_defaults
     pars = {}
     with open(filename, "r") as f:
         for l in f.readlines():
@@ -324,17 +368,20 @@ def run_mascot(args):
     if not l:
         return
 
-    project, sample = map(lambda x: x.strip(), l.split('\t'))
-    psample = (project, sample)
+    project, sample, protocol, organism = map(lambda x: x.strip(), l.split('\t'))
+    psample = (project, sample, protocol, organism)
     mgfpath = get_sample_mgf_path(psample)
     datpath = get_sample_mascot_path(psample)
-    set_status(psample, "Identification running (m)")
-    pars = get_default_mascot_pars(psample)
-    pars['DB'] = 'UniProtKB-HS_TnD_17'
-    #pars['USERNAME'] = 'admin'
-    #pars['PASSWORD'] = 'Chieftec64'
+    set_status(psample, "Identification (Mascot) running")
+    mascot_db = get_db(organism, MASCOT_DB_HEADER)
+    mascot_prefs = get_prefs(protocol, MASCOT_PREFS_HEADER)
+    pars = get_default_mascot_pars(mascot_prefs)
 
-    session = mascot_login(MASCOT_CGI, 'admin', 'Chieftec64')
+    pars['DB'] = mascot_db
+    pars['COM'] = 'msauto_prot1: '+'/'.join(psample)
+
+
+    session = mascot_login(MASCOT_CGI, 'mascotadmin', 'R251260z')
     if session:
         log(project, f"Logged in {MASCOT_CGI}")
 
@@ -350,7 +397,8 @@ def run_mascot(args):
         error_result = re.match('Sorry, your search could not be performed', response.content.decode())
         if error_result:
             log('Search failed')
-        match = re.search(r'master_results\.pl\?file=.*data/(?P<date>\d+)/(?P<file>F\d+\.dat)',
+        #http://mascot.ripcm.com/mascot/cgi/master_results_2.pl?file=../data/20210420/F052415.dat
+        match = re.search(r'master_results_2\.pl\?file=.*data/(?P<date>\d+)/(?P<file>F\d+\.dat)',
                           response.content.decode())
         date, file = match.group('date'), match.group('file')
 
@@ -364,7 +412,7 @@ def run_mascot(args):
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
         log(project, 'Downloaded')
-        set_status(psample, 'Identification finished')
+        set_status(psample, 'Identification (Mascot) finished')
 
     else:
         log(project, "Bad response")
@@ -386,6 +434,8 @@ if __name__ == '__main__':
     tandem_parser = subparsers.add_parser('mascot')
     tandem_parser.set_defaults(func=run_mascot)
 
+    prefs_parser = subparsers.add_parser('prefs')
+    prefs_parser.set_defaults(func=get_current_prefs)
 
     args = parser.parse_args()
     args.func(args)
