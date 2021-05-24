@@ -36,10 +36,9 @@ TANDEM_DB_HEADER = 'Tandem_db'
 MASCOT_DB_HEADER = 'Mascot_db'
 TANDEM_PREFS_HEADER = 'Tandem_prefs'
 MASCOT_PREFS_HEADER = 'Mascot_prefs'
-
+POSTPROC_PREFS_HEADER = 'Postproc_prefs'
 
 POOL_TIME = 1
-
 
 LETTERS='ABCDEFGHIJKLNMOPQRSTUVWXYZ'
 g_service = None
@@ -107,14 +106,14 @@ def get_current_table(uploaded=True, scaffold_check=False):
 @locked(LOCK_PREFS)
 def get_current_prefs(args):
     service = get_g_service()
-    range_name = 'Prefs!A:C'
+    range_name = 'Prefs!A:D'
     table = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range=range_name).execute()
     colnames = table['values'][0]
     colnames = list(map(lambda s: s.replace(' ', '_'), colnames))
     protocol = pd.DataFrame( table['values'][1:], columns=colnames)
     protocol.to_csv(PROTOCOL_MAP, sep='\t', index=False)
 
-    range_name = 'Prefs!D:F'
+    range_name = 'Prefs!E:G'
     table = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range=range_name).execute()
     colnames = table['values'][0]
     colnames = list(map(lambda s: s.replace(' ', '_'), colnames))
@@ -474,8 +473,9 @@ def run_scaffold(args):
             continue
 
         fasta = os.path.join("/home/msauto/fasta", get_db(organism, MASCOT_DB_HEADER)+'.fasta')
+        stemplate = get_prefs(protocol, POSTPROC_PREFS_HEADER)+"_scaffold_template.scafml"
         scafml = os.path.join(get_proj_root(p), p+"_scaffold.scafml")
-        make_scafml('/home/msauto/scaffold_template.scafml',
+        make_scafml(stemplate,
                     scafml,
                     {'name': p, 'fasta': fasta, 'output':get_proj_root(p)+'/', 'samples':slist.values()})
         log(p, f'Running Scaffold for {scafml}')
@@ -483,7 +483,19 @@ def run_scaffold(args):
                                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).split())
         process.wait()
         log(project, f"Scaffold finished with {process.returncode}, {process.stdout}, {process.stderr}")
-        set_status(psample, "Scaffold finished")
+        set_status(psample, "Running postprocessing")
+        script = get_prefs(protocol, POSTPROC_PREFS_HEADER)+".R"
+        wd = get_proj_root(project)
+        process = subprocess.Popen(POSTPROC_CMD.format(script=script, wd = wd, projname=project,
+                                                       shell=True, stdout=subprocess.PIPE,
+                                                       stderr=subprocess.PIPE).split())
+        process.wait()
+        log(project, f"Postproc finished with {process.returncode}, {process.stdout}, {process.stderr}")
+        set_status(psample, "All done")
+
+
+
+
         set_status(psample, "OK", SCAFFOLD_RUN_HEADER)
 
 
