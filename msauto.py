@@ -335,7 +335,11 @@ def run_tandem(args):
                                shell=True, stdout=subprocess.PIPE)
         process.wait()
         log(project, f"X!Tandem finished with {process.returncode}, {process.stdout}")
-        set_status(psample, "Identification (Tandem) finished")
+        if os.path.exists(get_sample_tandem_path(psample)):
+            amp = 'Mascot&Tandem'
+        else:
+            amp = 'Tandem'
+        set_status(psample, f"Identification ({amp}) finished")
 
 
 def get_default_mascot_pars(mascot_defaults):
@@ -418,7 +422,11 @@ def run_mascot(args):
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
         log(project, 'Downloaded')
-        set_status(psample, 'Identification (Mascot) finished')
+        if os.path.exists(get_sample_tandem_path(psample)):
+            amp = 'Mascot&Tandem'
+        else:
+            amp = 'Mascot'
+        set_status(psample, f'Identification ({amp}) finished')
 
     else:
         log(project, "Bad response")
@@ -467,7 +475,7 @@ def run_scaffold(args):
 
         fasta = os.path.join("/home/msauto/fasta", get_db(organism, MASCOT_DB_HEADER)+'.fasta')
         scafml = os.path.join(get_proj_root(p), p+"_scaffold.scafml")
-        make_scafml('/home/msauto/msauto_dev/msauto/scaffold_template.scafml',
+        make_scafml('/home/msauto/scaffold_template.scafml',
                     scafml,
                     {'name': p, 'fasta': fasta, 'output':get_proj_root(p)+'/', 'samples':slist.values()})
         log(p, f'Running Scaffold for {scafml}')
