@@ -335,7 +335,7 @@ def run_tandem(args):
                                shell=True, stdout=subprocess.PIPE)
         process.wait()
         log(project, f"X!Tandem finished with {process.returncode}, {process.stdout}")
-        if os.path.exists(get_sample_tandem_path(psample)):
+        if os.path.exists(get_sample_mascot_path(psample)):
             amp = 'Mascot&Tandem'
         else:
             amp = 'Tandem'
