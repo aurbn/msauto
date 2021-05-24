@@ -2,6 +2,7 @@
 import argparse
 import re
 import subprocess
+from collections import defaultdict
 from datetime import datetime
 import calendar
 import locale
@@ -19,7 +20,7 @@ from tempfile import NamedTemporaryFile
 from shutil import move
 import contextlib
 import functools
-
+import jinja2
 
 from config import *
 
@@ -28,6 +29,8 @@ SAMPLE_HEADER = 'Sample_ID'
 PROTOCOL_HEADER = 'Proteolysis_protocol'
 ORGANISM_HEADER = 'Organism'
 STATUS_HEADER = 'Status'
+SCAFFOLD_SAMPLE_HEADER = 'Scaffold_sample'
+SCAFFOLD_RUN_HEADER = 'Run_scaffold'
 
 TANDEM_DB_HEADER = 'Tandem_db'
 MASCOT_DB_HEADER = 'Mascot_db'
@@ -46,6 +49,7 @@ LOCK_IMPORT = 'LOCK_IMPORT'
 LOCK_CONVERT = 'LOCK_CONVERT'
 LOCK_TANDEM = 'LOCK_TANDEM'
 LOCK_MASCOT = 'LOCK_MASCOT'
+LOCK_SCAFFOLD = 'LOCK_SCAFFOLD'
 
 
 tandem_stub='''<?xml version="1.0"?>
@@ -86,15 +90,17 @@ def get_g_service():
     return service
 
 
-def get_current_table(uploaded=True):
+def get_current_table(uploaded=True, scaffold_check=False):
     service = get_g_service()
-    range_name = 'List!A:G'
+    range_name = 'List!A:I'
     table = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range=range_name).execute()
     colnames = table['values'][0]
     colnames = list(map(lambda s: s.replace(' ', '_'), colnames))
     d = pd.DataFrame( table['values'][1:], columns=colnames)
     if uploaded:
         d = d[d['Uploaded']=='TRUE']
+    if scaffold_check:
+        d = d[d['Run_scaffold']=='TRUE']
     return d
 
 
@@ -117,9 +123,9 @@ def get_current_prefs(args):
     return protocol, organism
 
 
-def set_status(psample, status):
+def set_status(psample, status, column=STATUS_HEADER):
     service = get_g_service()
-    range_name = 'List!A:G'
+    range_name = 'List!A:I'
     table = service.spreadsheets().values().get(spreadsheetId=spreadsheetId, range=range_name).execute()
     colnames = table['values'][0]
     proj_cn = None
@@ -131,7 +137,7 @@ def set_status(psample, status):
             proj_cn = i
         elif cn == SAMPLE_HEADER:
             sample_cn = i
-        elif cn == STATUS_HEADER:
+        elif cn == column:
             status_cn = i
     assert not(proj_cn is None and sample_cn is None and status_cn is None)
     for i, col in enumerate(table['values']):
@@ -418,6 +424,61 @@ def run_mascot(args):
         log(project, "Bad response")
 
 
+@locked(LOCK_SCAFFOLD)
+def run_scaffold(args):
+
+    def make_scafml(templatefile, resultfile, data):
+        with open(templatefile) as tf:
+            template = jinja2.Template(tf.read())
+        with open(resultfile, "w") as fo:
+            fo.write(template.render(data))
+
+    def check_ready(psample):
+        return os.path.exists(get_sample_mascot_path(psample)) and\
+               os.path.exists(get_sample_tandem_path(psample))
+
+
+    df = get_current_table(False)
+    projects = df[df[SCAFFOLD_RUN_HEADER]=='RUN'][PROJECT_HEADER]
+
+    for p in projects:
+        d = df[df[PROJECT_HEADER]==p]
+        psamples = []
+        slist = defaultdict(dict)
+        s_run = None
+        for k, row in d.iterrows():
+            project = row[PROJECT_HEADER]
+            sample = row[SAMPLE_HEADER]
+            protocol = row[PROTOCOL_HEADER]
+            organism = row[ORGANISM_HEADER]
+            scafsample = row[SCAFFOLD_SAMPLE_HEADER]
+            psample = (project, sample, protocol, organism, scafsample)
+            psamples.append(psample)
+            if row[SCAFFOLD_RUN_HEADER] == 'RUN':
+                s_run = psample
+            scat = tuple(scafsample.split('/'))
+            scat = scat if len(scat) == 2 else (scat,"default")
+            slist[scat]['name']=scat[0]
+            slist[scat]['category']=scat[1]
+            slist[scat]['files'] = slist[scat].get('files', [])+[get_sample_mascot_path(psample)]
+            slist[scat]['files'] = slist[scat].get('files', [])+[get_sample_tandem_path(psample)]
+        if not all(map(check_ready, psamples)):
+            continue
+
+        fasta = os.path.join("/home/msauto/fasta", get_db(organism, MASCOT_DB_HEADER)+'.fasta')
+        scafml = os.path.join(get_proj_root(p), p+"_scaffold.scafml")
+        make_scafml('/home/msauto/msauto_dev/msauto/scaffold_template.scafml',
+                    scafml,
+                    {'name': p, 'fasta': fasta, 'output':get_proj_root(p)+'/', 'samples':slist.values()})
+        log(p, f'Running Scaffold for {scafml}')
+        process = subprocess.Popen(SCAFFOLD_CMD.format(infile=scafml,
+                                   shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).split())
+        process.wait()
+        log(project, f"Scaffold finished with {process.returncode}, {process.stdout}, {process.stderr}")
+        set_status(psample, "Scaffold finished")
+        set_status(psample, "OK", SCAFFOLD_RUN_HEADER)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.set_defaults(func=lambda args: parser.print_help())
@@ -436,6 +497,9 @@ if __name__ == '__main__':
 
     prefs_parser = subparsers.add_parser('prefs')
     prefs_parser.set_defaults(func=get_current_prefs)
+
+    scaffold_parser = subparsers.add_parser('scaffold')
+    scaffold_parser.set_defaults(func=run_scaffold)
 
     args = parser.parse_args()
     args.func(args)

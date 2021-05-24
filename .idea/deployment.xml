@@ -1,11 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="msauto@prot1:22" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true">
+  <component name="PublishConfigData" autoUpload="Always" serverName="msauto_staging" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true">
     <serverData>
       <paths name="msauto@prot1:22">
         <serverdata>
           <mappings>
             <mapping deploy="/home/msauto/msauto_venv/msauto" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="msauto@prot1:22 agent">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/tmp/pycharm_project_380" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="msauto_dev">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/msauto_dev/msauto" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="msauto_staging">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/msauto/msauto_dev/msauto" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

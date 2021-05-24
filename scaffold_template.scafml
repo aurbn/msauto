@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scaffold pathsep="/" version="Scaffold_5.0.1">
+    <Experiment analyzeWithSubsetDB="true" annotateWithNCBI="false"
+        containsCommonContaminants="false" description=""
+        expandClusters="true"
+        experimentDisplayType="Protein Identification Probability"
+        generateDecoysForSearch="true" msFraggerAnalysis="None"
+        name="{{ name }}" password=""
+        peakListChargeStatesCalculated="Unspecified"
+        peakListDeisotoped="Unspecified" peakListGeneratorAnnotation=""
+        peakListGeneratorName="Unspecified"
+        peakListGeneratorVersion="Unspecified"
+        protectDisplaySettings="false" protectExportSpectra="false"
+        protectThresholds="false" proteinGrouping="Experiment Wide"
+        scoringSystem="LFDR" showHiddenProteins="true"
+        showLoadDataView="true" showProteinsView="true"
+        showPublishView="true" showQuantifyView="true"
+        showSampleNotes="true" showSamplesView="true"
+        showSimilarProteins="true" showSimilarityView="true"
+        showStatisticsView="true" unimod="Use System Default"
+        viewBioSamples="true" xTandemAnalysis="None">
+        <FastaDatabase
+            databaseAccessionRegEx=">(?:(?:sp)|(?:tr))\|([^\| ]*)"
+            databaseDescriptionRegex=">[^ ]*\|[^ ]* (.*)"
+            databaseVersion="" decoyProteinRegEx="REV_" id="1"
+            matchMethod="Magic"
+            path="{{ fasta }}"
+            reIndex="false" useAutoParse="true"/>
+        {% for sample in samples -%}
+        <BiologicalSample analyzeAsMudpit="false"
+            category="{{ sample['category'] }}" database="1" description="" id="{{ loop.index+1 }}"
+            name="{{ sample['name'] }}" quantitativeTechnique="Spectrum Counting">
+            {% for file in sample['files'] %}<InputFile>{{ file }}</InputFile>
+            {% endfor %}
+        </BiologicalSample>
+        {% endfor %}
+        <DisplayThresholds minimumPeptideCount="1" name="95%"
+            peptideProbability="at least 0.95"
+            peptideProbabilityNecessity="Required" proteinProbability="0.05"/>
+        <Annotation>
+            <Star color="Orange" delimiter="(,\s*)|(\s+)"
+                matchName="false" regEx="false"/>
+            <Hide delimiter="(,\s*)|(\s+)" matchName="false" regEx="false"/>
+            <GOA/>
+        </Annotation>
+        <Export
+            path="{{ output }}{{ name }}_Experiment.sf3"
+            saveCondensed="None" type="SF3"/>
+        <Export
+            path="{{ output }}{{ name }}_ProteinReport.xls"
+            timestamp="false" type="Protein Report"/>
+        <Export
+            path="{{ output }}{{ name }}_PeptideReport.xls"
+            timestamp="false" type="Peptide Report" useQPlusReport="false"/>
+        <Export
+            path="{{ output }}{{ name }}_SpectrumReport.xls"
+            timestamp="false" type="Spectrum Report" useQPlusReport="false"/>
+    </Experiment>
+</Scaffold>

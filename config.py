@@ -7,6 +7,7 @@ LOGNAME = 'msauto.log'
 PROTOCOL_MAP = os.path.join(DB_ROOT, "protocol.map")
 ORGANISM_MAP = os.path.join(DB_ROOT, "organism.map")
 CONVERSION_CMD = '/home/msauto/msauto_venv/msauto/conv.sh {infile} {outdir}'
+SCAFFOLD_CMD = '/home/msauto/Scaffold/ScaffoldBatch -f {infile}'
 CONF_DIR = '/mnt/MSproc/.conf'
 TANDEM_TAXONOMY = os.path.join(CONF_DIR, 'taxonomy.xml')
 TANDEM_DEFAULTS = '/home/msauto/msauto_venv/msauto/default_PROTEOME_MetOxilation_params.xml'
